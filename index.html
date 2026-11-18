@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#173f35">
+<title>OT Grocery Checkout</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+:root{--green:#174b3e;--mint:#e9f4ee;--ink:#1e2b27;--muted:#61716b;--line:#dce6e0;--gold:#f5c96a;--red:#a43d36}
+*{box-sizing:border-box}body{margin:0;background:#f4f7f5;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{background:var(--green);color:white;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+header h1{font-size:clamp(21px,4vw,30px);margin:0}header small{opacity:.85}
+main{max-width:1050px;margin:auto;padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.panel{background:white;border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 2px 10px #163e3010}
+h2{font-size:20px;margin:0 0 12px}.hint{color:var(--muted);font-size:14px;line-height:1.45}
+#reader{width:100%;max-width:480px;margin:10px auto;border-radius:12px;overflow:hidden;background:#17231f;min-height:190px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+button,.button{border:0;border-radius:12px;padding:13px 16px;font-size:16px;font-weight:650;background:var(--green);color:white;cursor:pointer}
+button.secondary{background:var(--mint);color:var(--green)}button.gold{background:var(--gold);color:#33280c}button.danger{background:#f9e9e7;color:var(--red)}
+button:focus,input:focus{outline:3px solid #e3b94f;outline-offset:2px}
+input{font-size:17px;padding:12px;border:1px solid #b8c9c0;border-radius:10px;min-width:0}
+.manual{display:flex;gap:8px;margin-top:12px}.manual input{flex:1}
+#cart{min-height:145px}.cart-row{display:grid;grid-template-columns:44px 1fr auto auto;align-items:center;gap:9px;border-bottom:1px solid var(--line);padding:10px 0}
+.cart-icon{font-size:29px;text-align:center}.cart-name{font-weight:650}.cart-sub{font-size:12px;color:var(--muted)}
+.remove{font-size:13px;padding:7px 9px;background:#f9e9e7;color:var(--red)}
+.total{display:flex;justify-content:space-between;align-items:center;padding:16px 0 4px;font-size:18px;font-weight:700}.total strong{font-size:30px;color:var(--green)}
+.empty{padding:25px 8px;text-align:center;color:var(--muted)}
+#lastItem{display:none;background:var(--mint);border-radius:14px;padding:12px;margin-top:12px;align-items:center;gap:12px}
+#lastEmoji{font-size:40px}#lastName{font-weight:750;font-size:18px}#lastPrice{font-size:20px;color:var(--green);font-weight:750}
+#status{min-height:22px;margin-top:8px;color:var(--muted);font-size:14px}
+footer{text-align:center;color:var(--muted);padding:8px 18px 25px;font-size:12px}
+.modal{position:fixed;inset:0;background:#10251dcc;display:none;align-items:center;justify-content:center;padding:18px;z-index:10}
+.modal.open{display:flex}.dialog{background:white;border-radius:20px;padding:22px;width:min(520px,100%);max-height:90vh;overflow:auto}
+.dialog h2{font-size:24px}.choice{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+.choice button{padding:18px 10px}.field{margin:12px 0}.field label{display:block;font-weight:650;margin-bottom:6px}
+.receipt{background:#f7faf8;border:1px dashed #a8b8af;border-radius:12px;padding:14px;margin:12px 0;font-family:ui-monospace,monospace}
+@media(max-width:760px){main{grid-template-columns:1fr;padding:12px}header{padding:15px}.panel{padding:15px}.cart-row{grid-template-columns:38px 1fr auto}.cart-row .remove{grid-column:2/4;justify-self:end}}
+@media print{header,.scanner-panel,.actions,.remove,footer,.modal{display:none!important}body{background:white}main{display:block;padding:0}.panel{border:0;box-shadow:none}#cart{min-height:0}}
+</style>
+</head>
+<body>
+<header><div><h1>🛒 OT Grocery Checkout</h1><small>Practice shopping, scanning and payment</small></div><div aria-label="Store">TRAINING STORE</div></header>
+<main>
+<section class="panel scanner-panel">
+<h2>Scan an item</h2>
+<p class="hint">Hold the QR code on a grocery item inside the camera frame. Each scan adds one item to the cart.</p>
+<div id="reader"></div>
+<div class="actions">
+<button id="startBtn" onclick="startScanner()">Start camera</button>
+<button class="secondary" id="stopBtn" onclick="stopScanner()">Stop camera</button>
+</div>
+<div class="manual">
+<input id="manualId" placeholder="Product code (e.g. 001)" aria-label="Enter product code">
+<button class="secondary" onclick="manualAdd()">Add</button>
+</div>
+<div id="status" role="status" aria-live="polite">Camera is stopped. Select Start camera to begin.</div>
+<div id="lastItem" aria-live="polite"><span id="lastEmoji"></span><div><div id="lastName"></div><div id="lastPrice"></div></div></div>
+<p class="hint" style="margin-top:14px">Camera access requires Safari permission and a secure HTTPS website. If the camera is unavailable, use the product-code field above.</p>
+</section>
+<section class="panel">
+<h2>Your shopping cart</h2>
+<div id="cart"><div class="empty">Your cart is empty.<br>Scan your first grocery item to begin.</div></div>
+<div class="total"><span>Total</span><strong id="total">$0.00</strong></div>
+<div class="actions">
+<button class="secondary" onclick="removeLast()">Remove last item</button>
+<button class="danger" onclick="clearCart()">Clear cart</button>
+<button class="gold" onclick="openPayment()">Checkout</button>
+</div>
+</section>
+</main>
+<footer>Simulation only — no real payment is processed. Product prices are editable in this app's inventory.</footer>
+
+<div class="modal" id="paymentModal" role="dialog" aria-modal="true" aria-labelledby="payTitle">
+<div class="dialog">
+<h2 id="payTitle">Complete checkout</h2>
+<p class="hint">Choose how the shopper would like to pay. This is a practice simulation only.</p>
+<div class="receipt" id="receipt"></div>
+<div class="choice">
+<button onclick="choosePayment('Cash')">💵 Cash</button>
+<button onclick="choosePayment('Card')">💳 Card</button>
+</div>
+<div id="cashArea" style="display:none">
+<div class="field"><label for="cashGiven">Cash received ($)</label><input id="cashGiven" type="number" min="0" step="0.01" placeholder="Enter amount"></div>
+<button onclick="finishCash()">Calculate change</button>
+<div id="changeResult" class="hint" style="margin-top:12px;font-size:18px;font-weight:700"></div>
+</div>
+<div id="cardArea" style="display:none">
+<p class="hint">Practice prompt: Ask the shopper to pretend to tap, insert, or swipe their card.</p>
+<button onclick="finishCard()">Confirm simulated card payment</button>
+</div>
+<div class="actions"><button class="secondary" onclick="closePayment()">Back to cart</button></div>
+</div></div>
+<div class="modal" id="doneModal" role="dialog" aria-modal="true">
+<div class="dialog">
+<h2>🎉 Purchase complete!</h2><div class="receipt" id="finalReceipt"></div>
+<button onclick="newTransaction()">Start a new transaction</button>
+</div></div>
+
+<script>
+const PRODUCTS = {
+"001":{name:"Milk",category:"Dairy",emoji:"🥛",price:3.49},
+"002":{name:"Eggs",category:"Dairy",emoji:"🥚",price:4.29},
+"003":{name:"Cheddar cheese",category:"Dairy",emoji:"🧀",price:4.29},
+"004":{name:"Yogurt",category:"Dairy",emoji:"🥣",price:1.29},
+"005":{name:"Butter",category:"Dairy",emoji:"🧈",price:4.49},
+"006":{name:"Bread",category:"Bakery",emoji:"🍞",price:2.99},
+"007":{name:"Bagels",category:"Bakery",emoji:"🥯",price:3.49},
+"008":{name:"Cereal",category:"Breakfast",emoji:"🥣",price:4.99},
+"009":{name:"Oatmeal",category:"Breakfast",emoji:"🥣",price:3.79},
+"010":{name:"Apples",category:"Produce",emoji:"🍎",price:3.00},
+"011":{name:"Bananas",category:"Produce",emoji:"🍌",price:1.50},
+"012":{name:"Oranges",category:"Produce",emoji:"🍊",price:3.49},
+"013":{name:"Carrots",category:"Produce",emoji:"🥕",price:1.99},
+"014":{name:"Potatoes",category:"Produce",emoji:"🥔",price:3.99},
+"015":{name:"Pasta",category:"Pantry",emoji:"🍝",price:1.99},
+"016":{name:"Pasta sauce",category:"Pantry",emoji:"🍅",price:2.99},
+"017":{name:"Rice",category:"Pantry",emoji:"🍚",price:3.49},
+"018":{name:"Black beans",category:"Pantry",emoji:"🥫",price:1.49},
+"019":{name:"Peanut butter",category:"Pantry",emoji:"🥜",price:3.99},
+"020":{name:"Crackers",category:"Snacks",emoji:"🍘",price:2.49},
+"021":{name:"Orange juice",category:"Beverages",emoji:"🧃",price:4.49},
+"022":{name:"Bottled water",category:"Beverages",emoji:"💧",price:1.00},
+"023":{name:"Chicken",category:"Meat",emoji:"🍗",price:7.99},
+"024":{name:"Frozen vegetables",category:"Frozen",emoji:"🥦",price:2.99},
+"025":{name:"Frozen pizza",category:"Frozen",emoji:"🍕",price:5.99}
+};
+let cart=[],scanner=null,lastScan="",lastScanAt=0,chosenPayment="";
+const money=n=>"$"+n.toFixed(2);
+function decodeCode(raw){
+ let s=String(raw||"").trim().toUpperCase();
+ if(s.startsWith("OTGROCERY:"))s=s.split(":").pop();
+ if(s.startsWith("OTGROCERY-"))s=s.split("-").pop();
+ return s.replace(/[^A-Z0-9]/g,"");
+}
+function addProduct(raw){
+ const id=decodeCode(raw),p=PRODUCTS[id];
+ if(!p){document.getElementById("status").textContent="Product code not recognized. Try another label.";return;}
+ const now=Date.now();
+ if(id===lastScan && now-lastScanAt<1800){return;}
+ lastScan=id;lastScanAt=now;
+ cart.push({id,...p});
+ renderCart();
+ document.getElementById("lastEmoji").textContent=p.emoji;
+ document.getElementById("lastName").textContent=p.name;
+ document.getElementById("lastPrice").textContent=money(p.price);
+ document.getElementById("lastItem").style.display="flex";
+ document.getElementById("status").textContent=p.name+" added to cart.";
+}
+function renderCart(){
+ const el=document.getElementById("cart");
+ if(!cart.length){el.innerHTML='<div class="empty">Your cart is empty.<br>Scan your first grocery item to begin.</div>';}
+ else{el.innerHTML=cart.map((p,i)=>`<div class="cart-row"><span class="cart-icon">${p.emoji}</span><span><span class="cart-name">${p.name}</span><br><span class="cart-sub">${p.category}</span></span><strong>${money(p.price)}</strong><button class="remove" onclick="removeItem(${i})" aria-label="Remove ${p.name}">Remove</button></div>`).join("");}
+ document.getElementById("total").textContent=money(cart.reduce((s,p)=>s+p.price,0));
+}
+function removeItem(i){cart.splice(i,1);renderCart();document.getElementById("status").textContent="Item removed.";}
+function removeLast(){if(cart.length){cart.pop();renderCart();document.getElementById("status").textContent="Last item removed.";}}
+function clearCart(){cart=[];renderCart();document.getElementById("lastItem").style.display="none";document.getElementById("status").textContent="Cart cleared.";}
+function manualAdd(){const v=document.getElementById("manualId").value;addProduct(v);document.getElementById("manualId").value="";}
+function startScanner(){
+ if(!window.Html5Qrcode){document.getElementById("status").textContent="Scanner library did not load. Check internet connection or use product-code entry.";return;}
+ if(scanner)return;
+ scanner=new Html5Qrcode("reader");
+ scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:230,height:230}},text=>addProduct(text),()=>{})
+ .then(()=>document.getElementById("status").textContent="Camera is on. Scan a product label.")
+ .catch(err=>{document.getElementById("status").textContent="Could not start camera. Allow camera access and open this page over HTTPS.";scanner=null;});
+}
+function stopScanner(){if(scanner){scanner.stop().then(()=>{scanner.clear();scanner=null;document.getElementById("status").textContent="Camera stopped.";}).catch(()=>{scanner=null;});}}
+function openPayment(){
+ if(!cart.length){document.getElementById("status").textContent="Scan at least one item before checkout.";return;}
+ const total=cart.reduce((s,p)=>s+p.price,0);
+ document.getElementById("receipt").innerHTML=cart.map(p=>`${p.name.padEnd(22," ")} ${money(p.price)}`).join("<br>")+"<hr>Total: "+money(total);
+ document.getElementById("cashArea").style.display="none";document.getElementById("cardArea").style.display="none";document.getElementById("changeResult").textContent="";
+ document.getElementById("paymentModal").classList.add("open");
+}
+function choosePayment(type){chosenPayment=type;document.getElementById("cashArea").style.display=type==="Cash"?"block":"none";document.getElementById("cardArea").style.display=type==="Card"?"block":"none";}
+function finishCash(){
+ const total=cart.reduce((s,p)=>s+p.price,0),given=Number(document.getElementById("cashGiven").value);
+ if(!Number.isFinite(given)||given<total){document.getElementById("changeResult").textContent="Please enter at least "+money(total)+".";return;}
+ const change=Math.round((given-total)*100)/100;
+ document.getElementById("changeResult").textContent="Change due: "+money(change);
+ setTimeout(()=>completeTransaction("Cash",given,change),900);
+}
+function finishCard(){completeTransaction("Card",null,null);}
+function completeTransaction(method,given,change){
+ const total=cart.reduce((s,p)=>s+p.price,0);
+ document.getElementById("finalReceipt").innerHTML=cart.map(p=>`${p.name} — ${money(p.price)}`).join("<br>")+"<hr><b>Total: "+money(total)+"</b><br>Payment practice: "+method+(method==="Cash"?"<br>Cash received: "+money(given)+"<br>Change: "+money(change):"");
+ document.getElementById("paymentModal").classList.remove("open");document.getElementById("doneModal").classList.add("open");stopScanner();
+}
+function closePayment(){document.getElementById("paymentModal").classList.remove("open");}
+function newTransaction(){document.getElementById("doneModal").classList.remove("open");clearCart();startScanner();}
+document.getElementById("manualId").addEventListener("keydown",e=>{if(e.key==="Enter")manualAdd();});
+renderCart();
+</script>
+</body></html>
